@@ -869,7 +869,7 @@ def loop_color(user_id):
 
 # ----- Functions to be implemented are below
 
-# Task 3.1
+# Task 3.3
 def recommend(user_id, filter_following):
     """
     Args:
@@ -914,7 +914,7 @@ def user_risk_analysis(user_id):
     return score;
 
     
-# Task 3.3
+# Task 3.1
 def moderate_content(content):
     """
     Args
@@ -931,12 +931,63 @@ def moderate_content(content):
             password: admin
     Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
-
-    moderated_content = content
+    original_content = content
     score = 0
+    """
+    Rule 1.1.1(Tier 1 Words):
+        A case-insensitive, whole-word search is performed against the Tier 1 Word List. If a match is found, the function immediately returns the string [content removed due to severe violation] and a fixed Content Score of 5.0.
+    """
+    TIER1_PATTERN = r'\b('+'|'.join(re.escape(word) for word in TIER1_WORDS) + r')\b'
+    tier1Matches = re.findall(TIER1_PATTERN, original_content, flags=re.IGNORECASE)
+    if len(tier1Matches):
+        score = 5
+        moderated_content = "[content removed due to severe violation]"
+        return moderated_content, score
+    
+    """
+    Rule 1.1.2(Tier 2 Phrases):
+        If no Tier 1 match is found, a case-insensitive, whole-phrase search is performed against the Tier 2 Phrase List. If a match is found, the function immediately returns the string [content removed due to spam/scam policy] and a fixed Content Score of 5.0.
+    """
+    TIER2_PATTERN = r'\b('+'|'.join(re.escape(phrase) for phrase in TIER2_PHRASES) + r')\b'
+    tier2Matches = re.findall(TIER2_PATTERN, original_content, flags=re.IGNORECASE)
+    if len(tier2Matches):
+        score = 5
+        moderated_content = "[content removed due to spam/scam policy]"
+        return moderated_content, score
+    
+    """
+    Rule 1.2.1(Tier 3 Words):
+        Each case-insensitive, whole-word match from the Tier 3 Word List is replaced with asterisks (*) equal to its length. The Content Score is incremented by +2.0 for each match.
+    """    
+    TIER3_PATTERN = r'\b('+'|'.join(re.escape(word) for word in TIER3_WORDS) + r')\b'
+    tier3Matches = re.findall(TIER3_PATTERN, original_content, flags=re.IGNORECASE)
+    score += len (tier3Matches) * 2
+    moderated_content = re. sub(TIER3_PATTERN, lambda m:'*' * len (m.group(0)), original_content, flags=re.IGNORECASE)
+    
+    """
+    Rule 1.2.2(External Links):
+        Each detected URL is replaced with [link removed]. The Content Score is incremented by +2.0 for each match.
+    """
+    EXTERNAL_LINKS_PATTERN = r"\b(?:(?:https?://|www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s]*|[a-z0-9-]+\.[a-z]{2,}(?:/[^\s]*)?)\b"
+    externalLinkMatches = re.findall(EXTERNAL_LINKS_PATTERN, original_content, flags=re.IGNORECASE)
+    score += len (externalLinkMatches) * 2
+    moderated_content = re. sub(EXTERNAL_LINKS_PATTERN, lambda m:"[link removed]", original_content, flags=re.IGNORECASE)
+    
+    """
+    Rule 1.2.3(Excessive Capitalization):
+        If content has >15 alphabetic characters and >70% are uppercase, the Content Score is incremented by a fixed value of +0.5. The content is not modified.
+    """
+    EXTENSIVE_CAPITALIZATION_PATTERN = r"[A-Za-z]"
+    letters = re.findall(EXTENSIVE_CAPITALIZATION_PATTERN, original_content)
+    uppercaseCount = 0
+    for letter in letters:
+        if letter.isupper():
+            uppercaseCount += 1
+    uppercaseRatio = uppercaseCount/len(letters)
+    if len(letters)> 15 and uppercaseRatio > 0.7:
+        score += 0.5
     
     return moderated_content, score
-
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
