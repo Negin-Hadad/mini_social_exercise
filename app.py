@@ -958,11 +958,11 @@ def moderate_content(content):
     """
     Rule 1.2.1(Tier 3 Words):
         Each case-insensitive, whole-word match from the Tier 3 Word List is replaced with asterisks (*) equal to its length. The Content Score is incremented by +2.0 for each match.
-    """    
+    """
     TIER3_PATTERN = r'\b('+'|'.join(re.escape(word) for word in TIER3_WORDS) + r')\b'
     tier3Matches = re.findall(TIER3_PATTERN, original_content, flags=re.IGNORECASE)
-    score += len (tier3Matches) * 2
-    moderated_content = re. sub(TIER3_PATTERN, lambda m:'*' * len (m.group(0)), original_content, flags=re.IGNORECASE)
+    score += len(tier3Matches) * 2
+    moderated_content = re.sub(TIER3_PATTERN, lambda m:"*" * len(m.group(0)), original_content, flags=re.IGNORECASE)    
     
     """
     Rule 1.2.2(External Links):
@@ -970,8 +970,8 @@ def moderate_content(content):
     """
     EXTERNAL_LINKS_PATTERN = r"\b(?:(?:https?://|www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s]*|[a-z0-9-]+\.[a-z]{2,}(?:/[^\s]*)?)\b"
     externalLinkMatches = re.findall(EXTERNAL_LINKS_PATTERN, original_content, flags=re.IGNORECASE)
-    score += len (externalLinkMatches) * 2
-    moderated_content = re. sub(EXTERNAL_LINKS_PATTERN, lambda m:"[link removed]", original_content, flags=re.IGNORECASE)
+    score += len(externalLinkMatches) * 2
+    moderated_content = re.sub(EXTERNAL_LINKS_PATTERN, lambda m:"[link removed]", moderated_content, flags=re.IGNORECASE)
     
     """
     Rule 1.2.3(Excessive Capitalization):
@@ -987,6 +987,15 @@ def moderate_content(content):
     if len(letters)> 15 and uppercaseRatio > 0.7:
         score += 0.5
     
+    """
+    Custom Rule(Personal Information):
+        Each detected Phone Number is replaced by [personal information removed]. The content score is not incremented. 
+    """
+    PERSONAL_INFORMATION_PATTERN = r'(?:'+'(\+?\d{1,3}[\s\-\.]?)?'+'\d{3,4}[\s\-\.]?\d{3,4}'+'(?:[\s\-\.]?\d{3,4})?'+r')'
+    personalInformationMatches = re.findall(PERSONAL_INFORMATION_PATTERN, original_content)
+    if len(personalInformationMatches):
+        moderated_content = re.sub(PERSONAL_INFORMATION_PATTERN, lambda m:"[personal information removed]", moderated_content)
+
     return moderated_content, score
 
 if __name__ == '__main__':
