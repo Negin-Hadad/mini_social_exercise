@@ -908,10 +908,67 @@ def user_risk_analysis(user_id):
             password: admin
         Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
+    average_post_score = 0
+    average_comment_score = 0
+    profile_score = 0
+    content_risk_score = 0
     
-    score = 0
+    # profile risk score calculation:
+      # 1. fetch required data(columns) of the user including their profile content
+      # 2. acquire risk score by calling moderate_content() function for content of the profile
+    userInfo = query_db('SELECT profile, created_at, birthdate FROM users WHERE id = ?', (user_id,))
+    if userInfo[0]['profile']:
+        _, profile_score = moderate_content(userInfo[0]['profile'])
 
-    return score;
+    # post risk score calculation:
+      # 1. fetch all posts of the user
+      # 2. acquire risk score by calling moderate_content() function for each post
+      # 3. calculate the average risk score by having all the posts' risk scores
+    sumPostsScore = 0
+    counterPostsScore = 0
+    user_posts = query_db('SELECT content FROM posts WHERE user_id = ?', (user_id,))
+    for post in user_posts:
+        _, post_risk_score = moderate_content(post['content'])
+        sumPostsScore += post_risk_score
+        if post_risk_score:
+            counterPostsScore += 1
+    if counterPostsScore:
+        average_post_score = sumPostsScore/counterPostsScore
+    
+    # comment risk score calculation:
+      # 1. fetch all comments of the user
+      # 2. acquire risk score by calling moderate_content() function for each comment
+      # 3. calculate the average risk score by having all the comments' risk scores  
+    sumCommentsScore = 0
+    counterCommentsScore = 0
+    user_comments = query_db('SELECT content FROM comments WHERE user_id = ?', (user_id,))
+    for comment in user_comments:
+        _, comment_risk_score = moderate_content(comment['content'])
+        sumCommentsScore += comment_risk_score
+        if comment_risk_score:
+            counterCommentsScore += 1
+    if counterCommentsScore:
+        average_comment_score = sumCommentsScore/counterCommentsScore
+        
+    # final user risk calculations based on formulas in rules page:
+    content_risk_score = (profile_score * 1) + (average_post_score * 3) + (average_comment_score * 1)
+    user_risk_score = content_risk_score
+    
+    # assign weights to user risk score based on their account age:
+    userAccountAgeDays = (datetime.utcnow() - userInfo[0]['created_at']).days + 1
+    if userAccountAgeDays < 7:
+        user_risk_score = content_risk_score * 1.5
+    elif userAccountAgeDays < 30:
+        user_risk_score = content_risk_score * 1.2
+
+    # custom user risk measurement based on their age:
+    userAgeYears = (datetime.utcnow().date().year - userInfo[0]['birthdate'].year)
+    if userAgeYears < 16:
+        user_risk_score *= 1.5
+    elif userAgeYears < 25:
+        user_risk_score *= 1.2
+
+    return user_risk_score;
 
     
 # Task 3.1
@@ -979,13 +1036,14 @@ def moderate_content(content):
     """
     EXTENSIVE_CAPITALIZATION_PATTERN = r"[A-Za-z]"
     letters = re.findall(EXTENSIVE_CAPITALIZATION_PATTERN, original_content)
-    uppercaseCount = 0
-    for letter in letters:
-        if letter.isupper():
-            uppercaseCount += 1
-    uppercaseRatio = uppercaseCount/len(letters)
-    if len(letters)> 15 and uppercaseRatio > 0.7:
-        score += 0.5
+    if len(letters)> 15:
+        uppercaseCount = 0
+        for letter in letters:
+            if letter.isupper():
+                uppercaseCount += 1
+        uppercaseRatio = uppercaseCount/len(letters)
+        if uppercaseRatio > 0.7:
+            score += 0.5
     
     """
     Custom Rule(Personal Information):
