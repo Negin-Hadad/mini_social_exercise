@@ -889,10 +889,63 @@ def recommend(user_id, filter_following):
     - http://www.configworks.com/mz/handout_recsys_sac2010.pdf
     - https://www.researchgate.net/publication/227268858_Recommender_Systems_Handbook
     """
+    # 1. Get the content of all posts the user has liked (reacted to)
+    positive_reacted_posts_content = query_db('''
+        SELECT p.content FROM posts p JOIN reactions r ON p.id = r.post_id 
+        WHERE r.user_id = ? 
+	    AND ( r.reaction_type = "like" OR r.reaction_type = "love" OR r.reaction_type = "laugh" );
+    ''', (user_id,))
+    followed_posts_content = query_db('''
+        SELECT p.content FROM posts p
+        JOIN follows f ON p.user_id = f.followed_id
+        WHERE f.follower_id = ?;
+    ''', (user_id,))
+    reference_posts_content = list(set(followed_posts_content + positive_reacted_posts_content))
+    
+    # If the user hasn't liked any posts and doesn't follow anyone return the 5 newest posts
+    if not len(reference_posts_content):
+        return query_db('''
+            SELECT p.id, p.content, p.created_at, u.username, u.id as user_id
+            FROM posts p JOIN users u ON p.user_id = u.id
+            WHERE p.user_id != ? ORDER BY p.created_at DESC LIMIT 5
+        ''', (user_id,))
 
-    recommended_posts = {} 
+    # 2. Find the most common words from the posts they liked
+    word_counts = collections.Counter()
+    # A simple list of common words to ignore
+    common_words = {'a', 'an', 'the', 'in', 'on', 'is', 'it', 'to', 'for', 'of', 'and', 'with', 'just', 'into', 'than', 'all', 'are', 'myself', 'every', 'more', 'this', 'that', 'finally', 'here', 'there', 'why', 'what', 'some', 'today'}
+    
+    for post in reference_posts_content:
+        words = re.findall(r'\b\w+\b', post['content'].lower())
+        for word in words:
+            if word not in common_words and len(word) > 2:
+                word_counts[word] += 1
+    
+    top_keywords = [word for word, _ in word_counts.most_common(5)]
+    
+    query = "SELECT 0 AS rep, p.id, p.content, p.created_at, u.username, u.id as user_id FROM posts p JOIN users u ON p.user_id = u.id"
+    params = []
+    # If filtering by following, add a WHERE clause to only include followed users.
+    if filter_following:
+        query += " WHERE p.user_id IN (SELECT followed_id FROM follows WHERE follower_id = ?)"
+        params.append(user_id)
+        
+    all_other_posts = [dict(row) for row in query_db(query, tuple(params))]
+    
+    recommended_posts = []
+    liked_post_ids = {post['id'] for post in query_db('SELECT post_id as id FROM reactions WHERE user_id = ?', (user_id,))}
 
-    return recommended_posts;
+    for post in all_other_posts:
+        if post['id'] in liked_post_ids or post['user_id'] == user_id:
+            continue
+        for keyword in top_keywords:
+            if keyword in post['content'].lower():
+                post['rep'] +=  1
+        recommended_posts.append(post)
+            
+    recommended_posts.sort(key=lambda p: p['rep'], reverse=True)
+    
+    return recommended_posts[:5]
 
 # Task 3.2
 def user_risk_analysis(user_id):
