@@ -1,0 +1,33 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<div class="container mt-5">
+  <!-- Topics Section -->
+  <h3 class="text-center border-bottom pb-2 my-5"><span>Topic Summary</span></h3>
+  <div class="row g-3">
+    {% for topic in topics %}
+    <div class="col-12 col-lg-8 mx-auto">  <!-- centered, single column -->
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <!-- Topic Number and ID -->
+          <h5 class="card-title">
+            <span class="text-primary fw-bold">Topic #{{ loop.index }}</span>
+          </h5>
+          <!-- Top Words -->
+          <p class="card-text">
+            <strong>Top Words:</strong> {{ topic.TopWords }}
+          </p>
+          <!-- Post Count -->
+          <p class="card-text text-muted mb-0">
+            <strong>The Topic's Number of Post:</strong> {{ topic.PostCount }}
+          </p>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+      <p class="text-center text-muted">No topics found.</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
