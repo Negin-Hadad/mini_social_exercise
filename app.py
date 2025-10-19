@@ -7,6 +7,17 @@ import sqlite3
 import hashlib
 import re
 from datetime import datetime
+from gensim.corpora import Dictionary
+from gensim.models.ldamodel import LdaModel
+from gensim.models.coherencemodel import CoherenceModel
+import pandas as pd
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+import nltk
+from gensim.models.phrases import Phrases, Phraser
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
 
 app = Flask(__name__)
 app.secret_key = '123456789' 
@@ -1108,6 +1119,87 @@ def moderate_content(content):
         moderated_content = re.sub(PERSONAL_INFORMATION_PATTERN, lambda m:"[personal information removed]", moderated_content)
 
     return moderated_content, score
+
+
+# Task 4.1  
+@app.route('/topics')
+def topics():
+    # Download necessary NLTK data
+    nltk.download('punkt')
+    nltk.download('stopwords')
+    nltk.download('wordnet')
+    nltk.download('punkt_tab')
+
+    # Load data
+    posts = query_db('''
+       SELECT id, content FROM posts;
+    ''',(),)
+    data = pd.DataFrame(posts, columns=['id', 'content'])
+    
+    
+    # Get a basic stopword list and add more manually
+    stop_words = stopwords.words('english')
+    stop_words.extend([ 'every', 'today', 'never', 'one', 'anyone', 'else', 'feel', 'feeling', 'back', 'new', 'finally', 'need', 'tried',
+                       'another', 'finished', 'see', 'step', 'sometimes', 'people','always', 'amazing', 'much', 'keep', 'nothing', 'hard', 
+                       'real', 'make', 'day', 'like', 'latest', 'got', 'knew', 'could', 'spent', 'wait', 'little', 'something','gon',
+                       'mindfulness', 'get', 'friend', 'attended', 'better', 'perfect', 'night', 'thought', 'best', 'fresh' ,'everyone',
+                       'let', 'change', 'great', 'good', 'amaze', 'kid', 'tonight', 'way', 'right', 'actually', 'still', 'old', 'trying',
+                       'think', 'read', 'grateful', 'afternoon', 'weekend', 'kindness', 'happy', 'saw', 'damn', 'many', 'thing', 'first',
+                       'really', 'last', 'spontaneous', 'made', 'beat', 'piece', 'inspiring', 'local', 'time', 'year', 'month', 'week',
+                       'tomorrow', 'yesterday', 'love', 'life', 'world', 'work', 'bad', 'want', 'look', 'caught', 'found', 'even', 'push',
+                       'next', 'find', 'incredible', 'bit', 'take'])
+    lemmatizer = WordNetLemmatizer()
+    bow_list = []
+    for _, row in data.iterrows():
+        text = row['content']
+        tokens = word_tokenize(text.lower()) # tokenise (i.e. get the words from the post)
+        tokens = [lemmatizer.lemmatize(t) for t in tokens] # lemmatise
+        tokens = [t for t in tokens if len(t) > 2]  # filter out words with less than 3 letter s
+        tokens = [t for t in tokens if t.isalpha() and t not in stop_words] # filter out stopwords
+        # if there's at least 1 word left for this post, append to list
+        if len(tokens) > 0:
+            bow_list.append(tokens)
+
+    # considering multi-word phrases
+    bigram = Phrases(bow_list, min_count=5, threshold=10)
+    bigram_mod = Phraser(bigram)
+    bow_list = [bigram_mod[doc] for doc in bow_list]
+
+    # Create dictionary and corpus
+    dictionary = Dictionary(bow_list)
+    # Filter words that appear less than 2 times or in more than 40% of posts
+    dictionary.filter_extremes(no_below=3, no_above=0.3)
+    corpus = [dictionary.doc2bow(tokens) for tokens in bow_list]
+        
+    # Train LDA model.for 10 topics
+    lda = LdaModel(corpus, num_topics=10, id2word=dictionary, passes=30, iterations=400, random_state=2)      
+    topics = lda.print_topics(num_words=5)
+
+    # Count how many posts belong to each topic
+    topic_counts = [0] * lda.num_topics
+    for bow in corpus:
+        topic_dist = lda.get_document_topics(bow)
+        dominant_topic = max(topic_dist, key=lambda x: x[1])[0]
+        topic_counts[dominant_topic] += 1
+
+    # Combine results into a list (array)
+    topic_summary = [
+        {
+            "TopWords": topic_words,
+            "PostCount": topic_counts[topic_id]
+        }
+        for topic_id, topic_words in topics
+    ]
+
+    # Sort by number of posts (descending)
+    topic_summary = sorted(topic_summary, key=lambda x: x["PostCount"], reverse=True)
+
+    # Print result (as an array)
+    print(topic_summary)
+
+    # Pass data to the template
+    return render_template('topics.html.j2',
+                           topics=topic_summary)  
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
