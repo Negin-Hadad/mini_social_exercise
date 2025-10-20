@@ -1122,21 +1122,7 @@ def moderate_content(content):
 
 
 # Task 4.1  
-@app.route('/topics')
-def topics():
-    # Download necessary NLTK data
-    nltk.download('punkt')
-    nltk.download('stopwords')
-    nltk.download('wordnet')
-    nltk.download('punkt_tab')
-
-    # Load data
-    posts = query_db('''
-       SELECT id, content FROM posts;
-    ''',(),)
-    data = pd.DataFrame(posts, columns=['id', 'content'])
-    
-    
+def preprocess_texts(data):
     # Get a basic stopword list and add more manually
     stop_words = stopwords.words('english')
     stop_words.extend([ 'every', 'today', 'never', 'one', 'anyone', 'else', 'feel', 'feeling', 'back', 'new', 'finally', 'need', 'tried',
@@ -1160,6 +1146,9 @@ def topics():
         if len(tokens) > 0:
             bow_list.append(tokens)
 
+    return bow_list
+
+def train_lda_model(bow_list, num_topics=10):
     # considering multi-word phrases
     bigram = Phrases(bow_list, min_count=5, threshold=10)
     bigram_mod = Phraser(bigram)
@@ -1172,7 +1161,25 @@ def topics():
     corpus = [dictionary.doc2bow(tokens) for tokens in bow_list]
         
     # Train LDA model.for 10 topics
-    lda = LdaModel(corpus, num_topics=10, id2word=dictionary, passes=30, iterations=400, random_state=2)      
+    lda = LdaModel(corpus, num_topics=num_topics, id2word=dictionary, passes=30, iterations=400, random_state=2)
+    return lda, corpus, dictionary, bow_list
+
+@app.route('/topics')
+def topics():
+    # Download necessary NLTK data
+    nltk.download('punkt')
+    nltk.download('stopwords')
+    nltk.download('wordnet')
+    nltk.download('punkt_tab')
+
+    # Load data
+    posts = query_db('''
+       SELECT id, content FROM posts;
+    ''',(),)
+    data = pd.DataFrame(posts, columns=['id', 'content'])
+    
+    bow_list = preprocess_texts(data)
+    lda, corpus, dictionary, bow_list = train_lda_model(bow_list)      
     topics = lda.print_topics(num_words=5)
 
     # Count how many posts belong to each topic
@@ -1200,6 +1207,88 @@ def topics():
     # Pass data to the template
     return render_template('topics.html.j2',
                            topics=topic_summary)  
+
+def tone_detector(sentiment_score):
+    if sentiment_score > 0.2:
+        tone = "Positive"
+    elif sentiment_score < -0.2:
+        tone = "Negative"
+    else:
+        tone = "Neutral"
+    print(f'Overall tone of platform is {tone}')
+
+# Task 4.2
+@app.route('/sentiment')
+def sentiment():
+    # Download the VADER lexicon
+    nltk.download('vader_lexicon')
+
+    # Load data from your database
+    posts = query_db('SELECT id, content FROM posts;')
+    comments = query_db('SELECT id, post_id, content FROM comments;')
+    posts_df = pd.DataFrame(posts, columns=['id', 'content'])
+    comments_df = pd.DataFrame(comments, columns=['id', 'post_id', 'content'])
+
+    # Initialize the VADER sentiment analyser
+    sia = SentimentIntensityAnalyzer()
+    
+    # Compute sentiment scores for posts and comments
+    posts_df['sentiment_score'] = posts_df['content'].apply(lambda x: sia.polarity_scores(x)['compound'])
+    comments_df['sentiment_score'] = comments_df['content'].apply(lambda x: sia.polarity_scores(x)['compound'])
+
+    # Determine the overall tone
+    overall_posts_sentiment = posts_df['sentiment_score'].mean()
+    overall_comments_sentiment = comments_df['sentiment_score'].mean()
+    overall_platform_sentiment = (overall_posts_sentiment*len(posts_df['sentiment_score']) + overall_comments_sentiment*len(comments_df['sentiment_score']))/(len(posts_df['sentiment_score']) + len(comments_df['sentiment_score']))
+
+    print(f"\nAverage sentiment of posts: {overall_posts_sentiment}")
+    print(f"Average sentiment of comments: {overall_comments_sentiment}")
+    print(f"Average sentiment of the platform: {overall_platform_sentiment}")
+    tone_detector(overall_platform_sentiment)
+    
+    # Sentiment per Topic Analysis
+    # Preprocessing and topic modeling
+    bow_list = preprocess_texts(posts_df)
+    lda, corpus, dictionary, bow_list = train_lda_model(bow_list)
+
+    # Assign topic to each post
+    topic_assignments = []
+    for bow in corpus:
+        topic_dist = lda.get_document_topics(bow)
+        dominant_topic = max(topic_dist, key=lambda x: x[1])[0] if topic_dist else None
+        topic_assignments.append(dominant_topic)
+    posts_df['dominant_topic'] = topic_assignments
+
+    # Compute average sentiment per topic
+    topic_sentiment = posts_df.groupby('dominant_topic')['sentiment_score'].mean().reset_index()
+    topic_sentiment.columns = ['TopicID', 'AverageSentiment']
+    
+    # Combine with topic keywords for clarity
+    topics = lda.print_topics(num_words=5)
+    topic_summary = []
+    for topic_id, topic_words in topics:
+        avg_sentiment = topic_sentiment.loc[
+            topic_sentiment['TopicID'] == topic_id, 'AverageSentiment'
+        ].values
+        avg_sentiment = avg_sentiment[0] if len(avg_sentiment) > 0 else None
+
+        tone_label = (
+            "Positive" if avg_sentiment and avg_sentiment > 0.2 else
+            "Negative" if avg_sentiment and avg_sentiment < -0.2 else
+            "Neutral"
+        )
+        topic_summary.append({
+            "TopicID": f"#{topic_id + 1}",
+            "TopWords": topic_words,
+            "AverageSentiment": avg_sentiment if avg_sentiment is not None else None,
+            "Tone": tone_label
+        })
+
+    print("\nSentiment per Topic:")
+    for ts in topic_summary:
+        print(f"{ts['TopicID']}: {ts['TopWords']} | Sentiment: {ts['AverageSentiment']} | {ts['Tone']}")
+
+    return render_template('base.html.j2')
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
