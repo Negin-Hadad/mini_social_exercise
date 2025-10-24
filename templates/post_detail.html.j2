@@ -40,6 +40,8 @@
             {% endif %}
         </div>
 
+        
+
         <!-- Add Reaction Dropdown Button -->
         {% if session.get('user_id') %}
         <div class="dropdown">
@@ -61,7 +63,30 @@
           </ul>
         </div>
         {% endif %}
+
+        {% if session.get('user_id') != post.user_id %}
+        <!-- Add Save Button -->
+         <div class="d-flex justify-content-end">
+            <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST">
+              <button 
+                type="submit" 
+                class="btn rounded-circle bookmark-btn p-0 ml-1 {% if post.isBookmarked %}btn-success{% else %}btn-light{% endif %}" 
+                data-bs-toggle="tooltip" 
+                data-bs-placement="top" 
+                title="{% if post.isBookmarked %}Un bookmark post{% else %}bookmark post{% endif %}">
+                {% if post.isBookmarked %}
+                  🔖
+                {% else %}
+                  📑
+                {% endif %}
+              </button>
+            </form>
+          </div>
+        {% endif %}
+
       </div>
+
+      
 
       <hr>
 
@@ -120,5 +145,13 @@
     </div>
   </div>
 </div>
+
+ <style>
+    .bookmark-btn {
+      width:30px;
+      height: 30px;
+      margin-left:8px;
+    }
+  </style>
 
 {% endblock %}

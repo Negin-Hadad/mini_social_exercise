@@ -70,6 +70,42 @@
     {% endfor %}
   </div>
 
+  {% if session.get('user_id') == user.id %}
+  <h3 class="text-center border-bottom pb-2 my-5"><span>Bookmarked Posts</span></h3>
+
+  <div class="row g-3">
+    {% for post in bookmarked_posts %}
+    <div class="col-md-6">
+      <div class="card h-100 shadow-sm card-hover">
+        <a href="{{ url_for('post_detail', post_id=post.id) }}" class="text-decoration-none text-reset">
+          <div class="card-body">
+            <p class="card-text">{{ post.content|truncate(100, True, '...') }}</p>
+            <small class="text-muted">Posted on {{ post.created_at|datetimeformat }}</small>
+          </div>
+        </a>
+        <div class="d-flex justify-content-end">
+            <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST">
+              <button 
+                type="submit" 
+                class="btn rounded-circle bookmark-btn p-0 ml-1 btn-success" 
+                data-bs-toggle="tooltip" 
+                data-bs-placement="top" 
+                title="Un bookmark post">
+                  🔖
+              </button>
+            </form>
+          </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+      <p class="text-center text-muted">No posts yet.</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+
   <!-- User's Latest Comments Section -->
   <h3 class="text-center border-bottom pb-2 my-5"><span>Latest Comments</span></h3>
 
@@ -94,6 +130,15 @@
     </div>
     {% endfor %}
   </div>
+
+   <style>
+    .bookmark-btn {
+      width:30px;
+      height: 30px;
+      margin-right:8px;
+      margin-bottom:8px;
+    }
+  </style>
 
 </div>
 {% endblock %}
