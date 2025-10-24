@@ -123,9 +123,26 @@
           </ul>
         </div>
         {% endif %}
+        {% if session.get('user_id') != entry.post.user_id %}
+        <!-- Add Bookmark Button -->
+         <div class="d-flex justify-content-end">
+            <form action="{{ url_for('bookmark_post', post_id=entry.post.id) }}" method="POST">
+              <button 
+                type="submit" 
+                class="btn rounded-circle bookmark-btn p-0 ml-1 {% if entry.isBookmarked %}btn-success{% else %}btn-light{% endif %}" 
+                data-bs-toggle="tooltip" 
+                data-bs-placement="top" 
+                title="{% if entry.isBookmarked %}Un bookmark post{% else %}Bookmark post{% endif %}">
+                {% if entry.isBookmarked %}
+                  🔖
+                {% else %}
+                  📑
+                {% endif %}
+              </button>
+            </form>
+          </div>
+        {% endif %}
       </div>
-
-
      {% if entry.comments %}
       <hr>
       {% if entry.comments %}
@@ -200,4 +217,12 @@
       Next &raquo;
     </a>
   </div>
+
+  <style>
+    .bookmark-btn {
+      width:30px;
+      height: 30px;
+      margin-left:8px;
+    }
+  </style>
 {% endblock %}
