@@ -184,6 +184,16 @@ def feed():
             )
             if reaction_check:
                 user_reaction = reaction_check['reaction_type']
+                
+        is_bookmarked = False
+        if current_user_id:
+            bookmark_check = query_db(
+                'SELECT 1 FROM bookmarked_posts WHERE user_id = ? AND post_id = ?',
+                (current_user_id, post['id']),
+                one=True
+            )
+            if bookmark_check:
+                is_bookmarked = True        
 
         reactions = query_db('SELECT reaction_type, COUNT(*) as count FROM reactions WHERE post_id = ? GROUP BY reaction_type', (post['id'],))
         comments_raw = query_db('SELECT c.id, c.content, c.created_at, u.username, u.id as user_id FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC', (post['id'],))
@@ -199,7 +209,8 @@ def feed():
             'reactions': reactions,
             'user_reaction': user_reaction,
             'followed_poster': followed_poster,
-            'comments': comments_moderated
+            'comments': comments_moderated,
+            'isBookmarked': is_bookmarked
         })
 
     #  4. Render Template with Pagination Info 
@@ -298,7 +309,27 @@ def user_profile(username):
         moderated_post_content, _ = moderate_content(post['content'])
         post['content'] = moderated_post_content
         posts.append(post)
-
+    
+    bookmarks_raw = query_db('''
+                SELECT 
+                    p.id, 
+                    p.content, 
+                    p.user_id, 
+                    p.created_at
+                FROM posts p
+                LEFT JOIN bookmarked_posts bp 
+                    ON p.id = bp.post_id AND bp.user_id = ?
+                WHERE bp.user_id = ?
+                ORDER BY p.created_at DESC
+            ''', (user['id'], user['id']))
+    bookmarked_posts = []
+    for bookmark_raw in bookmarks_raw:
+        bookmark_post = dict(bookmark_raw)
+        moderated_bookmarked_post_content, _ = moderate_content(bookmark_post['content'])
+        bookmark_post['content'] = moderated_bookmarked_post_content
+        bookmarked_posts.append(bookmark_post)
+    
+    
     comments_raw = query_db('SELECT id, content, user_id, post_id, created_at FROM comments WHERE user_id = ? ORDER BY created_at DESC LIMIT 100', (user['id'],))
     comments = []
     for comment_raw in comments_raw:
@@ -328,6 +359,7 @@ def user_profile(username):
     return render_template('user_profile.html.j2', 
                            user=user, 
                            posts=posts, 
+                           bookmarked_posts=bookmarked_posts,
                            comments=comments,
                            followers_count=followers_count, 
                            following_count=following_count,
@@ -381,6 +413,20 @@ def post_detail(post_id):
     # Unpack the tuple from moderate_content, we only need the moderated content string here
     moderated_post_content, _ = moderate_content(post['content'])
     post['content'] = moderated_post_content
+    
+    # Check if the current user has bookmarked this post
+    is_bookmarked = False
+    current_user_id = session.get('user_id')
+    if current_user_id:
+        bookmark_check = query_db(
+            'SELECT 1 FROM bookmarked_posts WHERE user_id = ? AND post_id = ?',
+            (current_user_id, post_id),
+            one=True
+        )
+        if bookmark_check:
+            is_bookmarked = True
+
+    post['isBookmarked'] = is_bookmarked 
 
     #  Fetch Reactions (No moderation needed) 
     reactions = query_db('''
@@ -409,6 +455,44 @@ def post_detail(post_id):
                            comments=comments,
                            reaction_emojis=REACTION_EMOJIS,
                            reaction_types=REACTION_TYPES)
+
+@app.route('/posts/<int:post_id>/bookmark_post', methods=['POST'])
+def bookmark_post(post_id):
+    """Handles bookmarking a post."""
+    user_id = session.get('user_id')
+
+    # Block access if user is not logged in
+    if not user_id:
+        flash('You must be logged in to bookmark a post.', 'danger')
+        return redirect(url_for('login'))
+
+    # Find the post in the database
+    post = query_db('SELECT id, user_id FROM posts WHERE id = ?', (post_id,), one=True)
+
+    # Check if the post exists and if the current user is the owner
+    if not post:
+        flash('Post not found.', 'danger')
+        return redirect(url_for('feed'))
+
+    if post['user_id'] == user_id:
+        flash('You do can not save your own post.', 'danger')
+        return redirect(request.referrer)
+    
+    bookmarked_post = query_db('SELECT * FROM bookmarked_posts WHERE user_id = ? AND post_id = ?', (user_id, post_id,), one=True)
+    
+    db = get_db()
+
+    if bookmarked_post:
+        db.execute('DELETE FROM bookmarked_posts WHERE post_id = ? AND user_id = ?', (post_id, user_id))
+        db.commit()
+        flash('Post removed from bookmarks.', 'info')
+    else: 
+        db.execute('INSERT INTO bookmarked_posts (post_id, user_id) VALUES (?, ?)', (post_id, user_id))
+        db.commit()
+        flash('Post added to bookmarks.', 'success')
+
+  
+    return redirect(request.referrer)
 
 @app.route('/about')
 def about():
