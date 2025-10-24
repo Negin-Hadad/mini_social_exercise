@@ -1148,7 +1148,7 @@ def preprocess_texts(data):
 
     return bow_list
 
-def train_lda_model(bow_list, num_topics=10):
+def train_lda_model(bow_list):
     # considering multi-word phrases
     bigram = Phrases(bow_list, min_count=5, threshold=10)
     bigram_mod = Phraser(bigram)
@@ -1159,10 +1159,29 @@ def train_lda_model(bow_list, num_topics=10):
     # Filter words that appear less than 2 times or in more than 40% of posts
     dictionary.filter_extremes(no_below=3, no_above=0.3)
     corpus = [dictionary.doc2bow(tokens) for tokens in bow_list]
+    
+    # We don't know at this point how many topics there are. Therefore, we try training the LDA algorithm at different topic counts, and picking the one that results in the best coherence. 
+    optimal_coherence = -100
+    optimal_lda = None
+    optimal_k = 0
+    for K in range(10, 41):
         
-    # Train LDA model.for 10 topics
-    lda = LdaModel(corpus, num_topics=num_topics, id2word=dictionary, passes=30, iterations=400, random_state=2)
-    return lda, corpus, dictionary, bow_list
+        # Train LDA model.for 10<=k<=40 topics
+        lda = LdaModel(corpus, num_topics=K, id2word=dictionary, passes=30, iterations=400, random_state=2)
+
+        # Determine how good is the LDA model by computing its 'coherence score'
+        coherence_model = CoherenceModel(model=lda, texts=bow_list, dictionary=dictionary, coherence='c_v')
+        coherence_score = coherence_model.get_coherence()
+        
+        if(coherence_score > optimal_coherence):
+            print(f'Trained LDA with {K} topics. Average topic coherence (higher is better): {coherence_score} which is the best so far!')
+            optimal_coherence = coherence_score
+            optimal_lda = lda
+            optimal_k = K
+        else: 
+            print(f'Trained LDA with {K} topics. Average topic coherence (higher is better): {coherence_score} which is not very good.')
+            
+    return optimal_lda, corpus, dictionary, bow_list, optimal_k
 
 @app.route('/topics')
 def topics():
@@ -1179,11 +1198,11 @@ def topics():
     data = pd.DataFrame(posts, columns=['id', 'content'])
     
     bow_list = preprocess_texts(data)
-    lda, corpus, dictionary, bow_list = train_lda_model(bow_list)      
+    lda, corpus, dictionary, bow_list, optimal_K = train_lda_model(bow_list)      
     topics = lda.print_topics(num_words=5)
 
     # Count how many posts belong to each topic
-    topic_counts = [0] * lda.num_topics
+    topic_counts = [0] * optimal_K
     for bow in corpus:
         topic_dist = lda.get_document_topics(bow)
         dominant_topic = max(topic_dist, key=lambda x: x[1])[0]
