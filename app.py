@@ -1232,7 +1232,7 @@ def preprocess_texts(data):
 
     return bow_list
 
-def train_lda_model(bow_list):
+def train_lda_model(bow_list, high_range):
     # considering multi-word phrases
     bigram = Phrases(bow_list, min_count=5, threshold=10)
     bigram_mod = Phraser(bigram)
@@ -1240,7 +1240,7 @@ def train_lda_model(bow_list):
 
     # Create dictionary and corpus
     dictionary = Dictionary(bow_list)
-    # Filter words that appear less than 2 times or in more than 40% of posts
+    # Filter words that appear less than 3 times or in more than 30% of posts
     dictionary.filter_extremes(no_below=3, no_above=0.3)
     corpus = [dictionary.doc2bow(tokens) for tokens in bow_list]
     
@@ -1248,7 +1248,7 @@ def train_lda_model(bow_list):
     optimal_coherence = -100
     optimal_lda = None
     optimal_k = 0
-    for K in range(10, 41):
+    for K in range(10, high_range):
         
         # Train LDA model.for 10<=k<=40 topics
         lda = LdaModel(corpus, num_topics=K, id2word=dictionary, passes=30, iterations=400, random_state=2)
@@ -1282,7 +1282,7 @@ def topics():
     data = pd.DataFrame(posts, columns=['id', 'content'])
     
     bow_list = preprocess_texts(data)
-    lda, corpus, dictionary, bow_list, optimal_K = train_lda_model(bow_list)      
+    lda, corpus, dictionary, bow_list, optimal_K = train_lda_model(bow_list, 41)      
     topics = lda.print_topics(num_words=5)
 
     # Count how many posts belong to each topic
@@ -1318,7 +1318,7 @@ def tone_detector(sentiment_score):
         tone = "Negative"
     else:
         tone = "Neutral"
-    print(f'Overall tone of platform is {tone}')
+    print(f'Overall tone of platform is {tone}\n')
 
 # Task 4.2
 @app.route('/sentiment')
@@ -1352,7 +1352,7 @@ def sentiment():
     # Sentiment per Topic Analysis
     # Preprocessing and topic modeling
     bow_list = preprocess_texts(posts_df)
-    lda, corpus, dictionary, bow_list = train_lda_model(bow_list)
+    lda, corpus, dictionary, bow_list, optimal_K= train_lda_model(bow_list, 11)
 
     # Assign topic to each post
     topic_assignments = []
@@ -1389,7 +1389,7 @@ def sentiment():
 
     print("\nSentiment per Topic:")
     for ts in topic_summary:
-        print(f"{ts['TopicID']}: {ts['TopWords']} | Sentiment: {ts['AverageSentiment']} | {ts['Tone']}")
+        print(f"{ts['TopicID']}: {ts['TopWords']} | Sentiment: {ts['AverageSentiment']} | tone: {ts['Tone']}")
 
     return render_template('base.html.j2')
 
